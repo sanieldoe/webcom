@@ -1,0 +1,13 @@
+{
+  "name": "webcom",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start":       "node serve.js",
+    "dev":         "node --watch serve.js",
+    "test:crypto": "node app/crypto.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
