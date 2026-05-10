@@ -18,7 +18,7 @@ import QRCode from 'https://esm.sh/qrcode@1.5.3'
 const RELAY_WS = (() => {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   // Production domain — relay is on Railway
-  if (window.location.hostname === 'companions.afthrs.au') {
+  if (window.location.hostname === 'companions.aftrhrs.au') {
     return 'wss://RELAY_URL_HERE'   // ← fill in after Railway deploy
   }
   // Dev / ngrok / tunnel — relay is on the same server
