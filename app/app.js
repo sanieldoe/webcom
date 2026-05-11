@@ -19,7 +19,7 @@ const RELAY_WS = (() => {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   // Production — relay is on Cloudflare Workers
   if (window.location.hostname === 'companions.aftrhrs.au') {
-    return 'wss://webcom-relay.YOUR_SUBDOMAIN.workers.dev'   // ← fill in after `npm run deploy`
+    return 'wss://webcom-relay.companions.workers.dev'
   }
   // Dev / ngrok / tunnel — relay is on the same server
   return `${proto}//${window.location.host}`
