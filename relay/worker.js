@@ -13,13 +13,10 @@
  *   WS /?code=ABC123&role=host|client
  *   Server sends immediately: { type: "joined", role, peers }
  *   Data messages:            { type: "message", payload: "<base64>" }
- *   Control (server→client):  "peer_joined" | "peer_left" | "host_offline" | "error"
- *
- * Requires Cloudflare Workers Paid plan (Durable Objects).
+ *   Control (server→client):  "peer_joined" | "peer_left" | "host_joined" | "host_offline" | "error"
  */
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-const TTL_MS     = 2 * 60 * 60 * 1000   // 2-hour inactivity TTL
 
 function makeCode() {
   return Array.from(
@@ -40,9 +37,6 @@ function json(data, status = 200) {
   return Response.json(data, { status, headers: corsHeaders() })
 }
 
-// Close a WebSocket with an error message before the client can do anything.
-// Uses the old server.accept() API intentionally — these are fire-and-forget
-// connections that we never want to hibernate.
 function wsReject(message) {
   const { 0: client, 1: server } = new WebSocketPair()
   server.accept()
@@ -65,12 +59,9 @@ export default {
       return json({ ok: true })
     }
 
+    // Generate a code — the DO is created lazily on first WebSocket connection
     if (request.method === 'POST' && url.pathname === '/session/create') {
-      const code = makeCode()
-      const stub = env.RELAY.get(env.RELAY.idFromName(code))
-      const res  = await stub.fetch(new Request('http://internal/init', { method: 'POST' }))
-      if (!res.ok) return json({ error: 'could not create session' }, 500)
-      return json({ code })
+      return json({ code: makeCode() })
     }
 
     if (request.headers.get('Upgrade') === 'websocket') {
@@ -86,113 +77,80 @@ export default {
 }
 
 // ── Durable Object ─────────────────────────────────────────────────────────────
+// Uses the classic server.accept() pattern with addEventListener — no hibernation.
+// The DO instance stays alive as long as WebSockets are open, holding session
+// state in plain instance variables (same model as the original Node.js relay).
 
 export class RelaySession {
   constructor(state) {
     this.ctx = state
+    this.host    = null          // WebSocket | null
+    this.clients = new Set()     // Set<WebSocket>
   }
 
   async fetch(request) {
-    const url = new URL(request.url)
-
-    // ── Session init (called by main worker on POST /session/create) ──────────
-    if (url.pathname === '/init') {
-      const existing = await this.ctx.storage.get('created')
-      if (!existing) await this.ctx.storage.put('created', Date.now())
-      await this.ctx.storage.setAlarm(Date.now() + TTL_MS)
-      return new Response('ok')
-    }
-
-    // ── WebSocket upgrade ─────────────────────────────────────────────────────
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 })
     }
 
-    const created = await this.ctx.storage.get('created')
-    if (!created) return wsReject('session not found')
-
+    const url  = new URL(request.url)
     const role = url.searchParams.get('role')
+
     if (role !== 'host' && role !== 'client') return wsReject('role must be host or client')
+    if (role === 'host' && this.host !== null) return wsReject('session already has a host')
 
-    if (role === 'host' && this.ctx.getWebSockets('host').length > 0) {
-      return wsReject('session already has a host')
-    }
-
-    // Accept with role as tag — this enables WebSocket hibernation so we don't
-    // burn CPU while connections are idle between messages.
     const { 0: client, 1: server } = new WebSocketPair()
-    this.ctx.acceptWebSocket(server, [role])
-
-    // Reset TTL on each new connection
-    this.ctx.storage.setAlarm(Date.now() + TTL_MS)
-
-    // Send joined confirmation. The newly accepted socket is already in
-    // getWebSockets(), so subtract 1 for the peer count when role matches.
-    const hosts   = this.ctx.getWebSockets('host')
-    const clients = this.ctx.getWebSockets('client')
+    server.accept()
 
     if (role === 'host') {
-      server.send(JSON.stringify({ type: 'joined', role: 'host', peers: clients.length }))
-    } else {
-      server.send(JSON.stringify({ type: 'joined', role: 'client', peers: hosts.length }))
-      if (hosts.length > 0) {
-        hosts[0].send(JSON.stringify({ type: 'peer_joined' }))
+      this.host = server
+      server.send(JSON.stringify({ type: 'joined', role: 'host', peers: this.clients.size }))
+      // Notify waiting clients that the host is now online
+      if (this.clients.size > 0) {
+        const note = JSON.stringify({ type: 'host_joined' })
+        for (const c of this.clients) this.#trySend(c, note)
       }
+    } else {
+      this.clients.add(server)
+      server.send(JSON.stringify({ type: 'joined', role: 'client', peers: this.host ? 1 : 0 }))
+      if (this.host) this.#trySend(this.host, JSON.stringify({ type: 'peer_joined' }))
     }
+
+    server.addEventListener('message', ({ data }) => {
+      let msg
+      try { msg = JSON.parse(data) } catch { return }
+      if (msg.type !== 'message' || !msg.payload) return
+
+      const out = JSON.stringify({ type: 'message', payload: msg.payload })
+
+      if (role === 'host') {
+        for (const c of this.clients) this.#trySend(c, out)
+      } else {
+        if (this.host) {
+          this.#trySend(this.host, out)
+        } else {
+          this.#trySend(server, JSON.stringify({ type: 'host_offline' }))
+        }
+      }
+    })
+
+    server.addEventListener('close', () => {
+      if (role === 'host') {
+        this.host = null
+        const note = JSON.stringify({ type: 'host_offline' })
+        for (const c of this.clients) this.#trySend(c, note)
+      } else {
+        this.clients.delete(server)
+        if (this.host) this.#trySend(this.host, JSON.stringify({ type: 'peer_left' }))
+      }
+    })
+
+    server.addEventListener('error', () => { try { server.close() } catch {} })
 
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  // ── Hibernatable WebSocket handlers ───────────────────────────────────────
-
-  webSocketMessage(ws, message) {
-    let msg
-    try { msg = JSON.parse(message) } catch { return }
-    if (msg.type !== 'message' || !msg.payload) return
-
-    // Reset TTL on activity (fire-and-forget — no await needed here)
-    this.ctx.storage.setAlarm(Date.now() + TTL_MS)
-
-    const role = ws.getTags()[0]   // 'host' or 'client'
-
-    if (role === 'host') {
-      const payload = JSON.stringify({ type: 'message', payload: msg.payload })
-      for (const c of this.ctx.getWebSockets('client')) c.send(payload)
-    } else {
-      const hosts = this.ctx.getWebSockets('host')
-      if (hosts.length > 0) {
-        hosts[0].send(JSON.stringify({ type: 'message', payload: msg.payload }))
-      } else {
-        ws.send(JSON.stringify({ type: 'host_offline' }))
-      }
-    }
-  }
-
-  webSocketClose(ws) {
-    const role = ws.getTags()[0]
-
-    if (role === 'host') {
-      const msg = JSON.stringify({ type: 'host_offline' })
-      for (const c of this.ctx.getWebSockets('client')) c.send(msg)
-    } else if (role === 'client') {
-      const hosts = this.ctx.getWebSockets('host')
-      if (hosts.length > 0) {
-        hosts[0].send(JSON.stringify({ type: 'peer_left' }))
-      }
-    }
-  }
-
-  webSocketError(ws) {
-    // Errors always trigger close, so webSocketClose handles cleanup.
-    ws.close()
-  }
-
-  // ── Alarm — TTL expired ───────────────────────────────────────────────────
-
-  async alarm() {
-    for (const ws of this.ctx.getWebSockets()) {
-      try { ws.close(1001, 'session expired') } catch {}
-    }
-    await this.ctx.storage.deleteAll()
+  #trySend(ws, msg) {
+    try { ws.send(msg) } catch {}
   }
 }
