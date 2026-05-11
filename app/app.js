@@ -449,7 +449,7 @@ const TAB_CONTENT = {
 
 // Expose for later steps to replace tab content
 export function registerTab(id, fn) { TAB_CONTENT[id] = fn }
-export { S as state, set, onData }
+export { S, set }
 
 // ── XSS guard ─────────────────────────────────────────────────────────────────
 
