@@ -6,6 +6,36 @@
  * (host UI) or in response to relay messages from a client.
  */
 
+const REQUIRED = ['Journal', 'Projects', 'Raw', 'Wiki']  // sorted
+
+export async function validateOrInitVault(root) {
+  // list non-hidden entries at root
+  const entries = []
+  for await (const [name, handle] of root.entries()) {
+    if (!name.startsWith('.')) entries.push({ name, kind: handle.kind })
+  }
+
+  if (entries.length === 0) {
+    // empty — create the 4 folders
+    for (const name of REQUIRED) {
+      await root.getDirectoryHandle(name, { create: true })
+    }
+    return { ok: true, created: true }
+  }
+
+  // check that entries are exactly the 4 required directories
+  const names = entries.map(e => e.name).sort()
+  const allDirs = entries.every(e => e.kind === 'directory')
+  const exact = names.length === 4 && names.every((n, i) => n === REQUIRED[i])
+
+  if (allDirs && exact) return { ok: true }
+
+  return {
+    ok: false,
+    error: 'This folder doesn\'t look like a Companions vault. Select an empty folder to create a new vault, or choose an existing one with the Projects, Raw, Wiki and Journal folders.'
+  }
+}
+
 // Navigate to a directory handle by path string (e.g. "projects/inbox")
 async function walkToDir(root, path, { create = false } = {}) {
   if (!path) return root

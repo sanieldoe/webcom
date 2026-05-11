@@ -8,6 +8,7 @@
  */
 
 import { RelayClient } from './relay-client.js'
+import { validateOrInitVault } from './vault.js'
 import QRCode from 'https://esm.sh/qrcode@1.5.3'
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -104,6 +105,12 @@ const ACTIONS = {
       vault = await window.showDirectoryPicker({ mode: 'readwrite' })
     } catch (e) {
       if (e.name !== 'AbortError') set({ error: 'Could not open vault folder.' })
+      return
+    }
+
+    const check = await validateOrInitVault(vault)
+    if (!check.ok) {
+      set({ error: check.error })
       return
     }
 
