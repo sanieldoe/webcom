@@ -230,15 +230,20 @@ function onRelayControl(msg) {
   }
 }
 
-// Stub handlers — expanded in Steps 4–9
+// Data handler registry — modules call onData(role, type, fn) to register
+const hostHandlers   = new Map()
+const clientHandlers = new Map()
+
+export function onData(role, type, fn) {
+  ;(role === 'host' ? hostHandlers : clientHandlers).set(type, fn)
+}
+
 function onHostData(msg) {
-  console.log('[host] data:', msg)
-  // Steps 4–9 register handlers here
+  hostHandlers.get(msg.type)?.(msg)
 }
 
 function onClientData(msg) {
-  console.log('[client] data:', msg)
-  // Steps 4–9 register handlers here
+  clientHandlers.get(msg.type)?.(msg)
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -444,7 +449,7 @@ const TAB_CONTENT = {
 
 // Expose for later steps to replace tab content
 export function registerTab(id, fn) { TAB_CONTENT[id] = fn }
-export { S as state, set, onHostData, onClientData }
+export { S as state, set, onData }
 
 // ── XSS guard ─────────────────────────────────────────────────────────────────
 

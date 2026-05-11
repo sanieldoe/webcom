@@ -133,10 +133,44 @@
     .copy-row { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 340px; }
     .copy-row .link-text { flex: 1; }
     .waiting-row { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 14px; margin-top: 8px; }
+
+    /* ── Vault ───────────────────────────────────────────────────────────── */
+    .vault-wrap { display: flex; flex-direction: column; }
+    .vault-breadcrumb { display: flex; align-items: center; gap: 2px; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap; flex-shrink: 0;
+      position: sticky; top: 0; background: var(--bg); z-index: 1; }
+    .vault-crumb-btn { background: none; border: none; color: var(--dim); font-size: 13px;
+      cursor: pointer; padding: 3px 6px; border-radius: 6px; font-family: inherit; }
+    .vault-crumb-btn:hover { color: var(--text); background: var(--surfaceB); }
+    .vault-crumb-cur { font-size: 13px; color: var(--text); font-weight: 600; padding: 3px 6px; }
+    .vault-sep { color: var(--faint); font-size: 13px; padding: 0 1px; }
+    .vault-list { display: flex; flex-direction: column; }
+    .vault-entry { width: 100%; background: none; border: none; border-bottom: 1px solid var(--border);
+      color: var(--text); display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+      cursor: pointer; font-family: inherit; font-size: 14px; text-align: left;
+      transition: background .1s; }
+    .vault-entry:hover { background: var(--surfaceB); }
+    .vault-entry-icon { font-size: 15px; flex-shrink: 0; }
+    .vault-entry-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vault-entry-arrow { color: var(--faint); font-size: 16px; }
+    .vault-empty { padding: 48px 16px; text-align: center; color: var(--dim); font-size: 14px; }
+    .vault-loading { padding: 48px; display: flex; justify-content: center; }
+    .vault-error { padding: 8px 16px; text-align: left; }
+    .vault-editor-wrap { display: flex; flex-direction: column; height: 100%; }
+    .vault-editor-header { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+      position: sticky; top: 0; background: var(--bg); z-index: 1; }
+    .vault-editor-filename { flex: 1; font-size: 14px; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+    .vault-editor { width: 100%; min-height: 70vh; background: var(--bg); color: var(--text);
+      border: none; resize: none; outline: none; padding: 16px;
+      font-family: 'SF Mono', 'Fira Mono', 'Consolas', monospace;
+      font-size: 13px; line-height: 1.7; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="module" src="app.js"></script>
+  <script type="module" src="vault-tab.js"></script>
 </body>
 </html>
