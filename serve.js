@@ -12,6 +12,7 @@
 import http         from 'node:http'
 import fs           from 'node:fs'
 import path         from 'node:path'
+import os           from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket } from 'ws'
 
@@ -210,14 +211,18 @@ wss.on('connection', (ws, req) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, '0.0.0.0', () => {
+  const lanIp = Object.values(os.networkInterfaces())
+    .flat()
+    .find(i => i.family === 'IPv4' && !i.internal)
+    ?.address ?? '?.?.?.?'
+
   console.log('')
   console.log('  Companions Lite')
   console.log('')
-  console.log(`  Local     →  http://localhost:${PORT}`)
-  console.log(`  Network   →  http://192.168.1.57:${PORT}`)
-  console.log(`  Tailscale →  http://100.82.35.39:${PORT}`)
+  console.log(`  Local   →  http://localhost:${PORT}`)
+  console.log(`  Network →  http://${lanIp}:${PORT}`)
   console.log('')
   console.log('  Mac:   open http://localhost:' + PORT)
-  console.log('  Phone: open http://100.82.35.39:' + PORT)
+  console.log('  Phone: open http://' + lanIp + ':' + PORT)
   console.log('')
 })

@@ -29,7 +29,7 @@ const RELAY_HTTP = RELAY_WS.replace(/^ws/, 'http')
 
 // QR / join URL — on localhost the Mac must advertise a reachable address.
 // On any other origin (ngrok, IP, domain) just use window.location.origin.
-const PHONE_ORIGIN = 'http://100.82.35.39:4000'  // ← Tailscale IP, used only when on localhost
+const PHONE_ORIGIN = 'http://192.168.1.2:4000'   // ← LAN IP, used only when on localhost
 
 const JOIN_ORIGIN = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? PHONE_ORIGIN
