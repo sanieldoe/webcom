@@ -6,7 +6,7 @@
  *
  * In production:
  *   - Static files  → Cloudflare Pages
- *   - Relay         → relay/server.js on Railway (separate deploy)
+ *   - Relay         → relay/worker.js on Cloudflare Workers (cd relay && npm run deploy)
  */
 
 import http         from 'node:http'
@@ -138,60 +138,46 @@ const heartbeat = setInterval(() => {
 
 wss.on('close', () => clearInterval(heartbeat))
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   ws.isAlive = true
   ws.on('pong', () => { ws.isAlive = true })
 
-  let session = null
-  let role    = null
-  let joined  = false
+  // Code and role come from URL params (matches the Cloudflare Worker protocol)
+  const params  = new URL(req.url, 'http://localhost').searchParams
+  const code    = params.get('code')?.toUpperCase().trim()
+  const role    = params.get('role')
+
+  const session = sessions.get(code)
+  if (!session) {
+    send(ws, { type: 'error', message: 'session not found' })
+    ws.close(); return
+  }
+  if (role !== 'host' && role !== 'client') {
+    send(ws, { type: 'error', message: 'role must be host or client' })
+    ws.close(); return
+  }
+  if (role === 'host' && session.host?.readyState === WebSocket.OPEN) {
+    send(ws, { type: 'error', message: 'session already has a host' })
+    ws.close(); return
+  }
+
+  touch(session)
+
+  if (role === 'host') {
+    session.host = ws
+    send(ws, { type: 'joined', role: 'host', peers: session.clients.size })
+    console.log(`[relay] host joined: ${code}`)
+  } else {
+    session.clients.add(ws)
+    send(ws, { type: 'joined', role: 'client', peers: session.host ? 1 : 0 })
+    if (session.host) send(session.host, { type: 'peer_joined' })
+    console.log(`[relay] client joined: ${code} (${session.clients.size} total)`)
+  }
 
   ws.on('message', (data) => {
     let msg
     try { msg = JSON.parse(data) } catch { return }
 
-    // ── Join handshake ────────────────────────────────────────────────────
-    if (!joined) {
-      if (msg.type !== 'join' || !msg.code || !msg.role) {
-        send(ws, { type: 'error', message: 'first message must be join' })
-        ws.close(); return
-      }
-
-      session = sessions.get(msg.code)
-      if (!session) {
-        send(ws, { type: 'error', message: 'session not found — host may have restarted' })
-        ws.close(); return
-      }
-
-      role = msg.role
-
-      if (role === 'host') {
-        if (session.host?.readyState === WebSocket.OPEN) {
-          send(ws, { type: 'error', message: 'session already has a host' })
-          ws.close(); return
-        }
-        session.host = ws
-        joined = true
-        touch(session)
-        send(ws, { type: 'joined', role: 'host', peers: session.clients.size })
-        console.log(`[relay] host joined: ${msg.code}`)
-
-      } else if (role === 'client') {
-        session.clients.add(ws)
-        joined = true
-        touch(session)
-        send(ws, { type: 'joined', role: 'client', peers: session.host ? 1 : 0 })
-        if (session.host) send(session.host, { type: 'peer_joined' })
-        console.log(`[relay] client joined: ${msg.code} (${session.clients.size} total)`)
-
-      } else {
-        send(ws, { type: 'error', message: 'role must be host or client' })
-        ws.close()
-      }
-      return
-    }
-
-    // ── Forward encrypted payload ─────────────────────────────────────────
     if (msg.type === 'message' && msg.payload) {
       touch(session)
       if (role === 'host') {
@@ -207,12 +193,11 @@ wss.on('connection', (ws) => {
   })
 
   ws.on('close', () => {
-    if (!session) return
     if (role === 'host') {
       session.host = null
       broadcast(session.clients, { type: 'host_offline' })
       console.log(`[relay] host left`)
-    } else if (role === 'client') {
+    } else {
       session.clients.delete(ws)
       if (session.host) send(session.host, { type: 'peer_left' })
       console.log(`[relay] client left (${session.clients.size} remaining)`)
