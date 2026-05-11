@@ -63,7 +63,10 @@ export class RelayClient extends EventTarget {
 
     let ws
     try {
-      ws = new WebSocket(this.#relayUrl)
+      // Code and role go in the URL so the Durable Object knows them at accept
+      // time, enabling WebSocket hibernation without a separate join handshake.
+      const url = `${this.#relayUrl}?code=${this.#code}&role=${this.#role}`
+      ws = new WebSocket(url)
     } catch {
       this.#scheduleReconnect()
       return
@@ -73,7 +76,6 @@ export class RelayClient extends EventTarget {
 
     ws.onopen = () => {
       this.#reconnectDelay = 2_000                            // reset backoff on success
-      ws.send(JSON.stringify({ type: 'join', code: this.#code, role: this.#role }))
     }
 
     ws.onmessage = async ({ data }) => {
